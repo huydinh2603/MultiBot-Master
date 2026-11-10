@@ -1,0 +1,16 @@
+{
+  "name": "sheriff-bot",
+  "version": "1.0.0",
+  "description": "Discord Tactical Mute & Economy Bot inspired by Delta Force Operations",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --max-old-space-size=64 --expose-gc --dns-result-order=ipv4first src/index.js",
+    "deploy": "node --dns-result-order=ipv4first src/deploy-commands.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7"
+  }
+}

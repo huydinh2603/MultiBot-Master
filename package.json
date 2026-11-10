@@ -1,0 +1,16 @@
+{
+  "name": "multibot-master",
+  "version": "1.0.0",
+  "description": "24/7 Multi-Bot Orchestrator running 5 Discord bots in a single 512MB container",
+  "main": "hub_server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "pm2-runtime ecosystem.config.cjs",
+    "dev": "node hub_server.js"
+  },
+  "dependencies": {
+    "pm2": "^5.4.3"
+  },
+  "author": "huydinh2603",
+  "license": "MIT"
+}

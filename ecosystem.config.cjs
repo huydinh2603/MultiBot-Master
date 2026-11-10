@@ -115,7 +115,7 @@ module.exports = {
         NODE_ENV: 'production',
         ORCHESTRATOR: 'true',
         WIDGET_PORT: '3005',
-        WIDGET_TOKEN: process.env.TOKEN_WIDGET || process.env.WIDGET_TOKEN || process.env.USER_TOKEN || process.env.DISCORD_TOKEN,
+        WIDGET_TOKEN: process.env.USER_TOKEN || process.env.TOKEN_USER || process.env.TOKEN_WIDGET || process.env.WIDGET_TOKEN || process.env.DISCORD_TOKEN,
       },
       restart_delay: 5000,
       max_restarts: 10,

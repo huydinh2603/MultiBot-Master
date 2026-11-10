@@ -1226,7 +1226,7 @@ app.listen(PORT, BIND_HOST, async () => {
   // Nạp cấu hình bài hát lưu trên Cloud trước khi kết nối Discord
   await syncConfigFromCloud();
 
-  const startupToken = loadWorkingToken() || process.env.WIDGET_TOKEN || process.env.USER_TOKEN || process.env.DISCORD_TOKEN;
+  const startupToken = process.env.USER_TOKEN || process.env.TOKEN_USER || process.env.WIDGET_TOKEN || process.env.TOKEN_WIDGET || loadWorkingToken() || process.env.DISCORD_TOKEN;
   if (startupToken) {
     connectWithToken(startupToken).catch((err) => {
       addLog(`[Khởi động] Token không hợp lệ (${err.message}). Vui lòng cập nhật Token mới.`);

@@ -67,7 +67,7 @@ Chuyển sang tab **Environment** trên Render và thêm các biến sau:
 | `VOICEGUARD_CHANNEL_ID` | *(Tùy chọn)* ID kênh voice muốn bot vào treo 24/7 |
 | `TOKEN_MODERATOR` | Token của Bot Moderator |
 | `TOKEN_SHERIFF` | Token của Bot Sheriff |
-| `TOKEN_WIDGET` | Token của Bot / User Widget |
+| `USER_TOKEN` | Token tài khoản cá nhân Discord (User Token) cho Widget |
 | `SYNC_KEY` | `LamiaSync2026` (Khóa bảo mật đồng bộ Widget) |
 
 > 📌 *Lưu ý: Nếu bạn chưa muốn bật bot nào, chỉ cần để trống hoặc không điền token của bot đó. Cụm điều phối sẽ tự động phát hiện và bỏ qua bot chưa có token.*

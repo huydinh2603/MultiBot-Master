@@ -79,8 +79,8 @@ function getBotStatuses() {
     widget: {
       name: 'Widget',
       type: 'Node.js 20 (discord.js-selfbot-v13)',
-      description: 'Custom Rich Presence 24/7 & Token Sync',
-      configured: hasToken('USER_TOKEN') || hasToken('TOKEN_USER') || hasToken('TOKEN_WIDGET') || hasToken('WIDGET_TOKEN') || hasToken('DISCORD_TOKEN'),
+      description: 'Custom Rich Presence 24/7 (Yêu cầu Discord User Token)',
+      configured: hasToken('USER_TOKEN') || hasToken('TOKEN_USER') || hasToken('TOKEN_WIDGET') || hasToken('WIDGET_TOKEN'),
     },
   };
 }

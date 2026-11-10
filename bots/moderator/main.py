@@ -168,10 +168,11 @@ async def sync_prefix_command(ctx: commands.Context):
 
 def main():
     if not DISCORD_TOKEN or DISCORD_TOKEN == "your_bot_token_here":
-        print("\n" + "=" * 60)
-        print(" [!] THIẾU TOKEN DISCORD BOT (MODERATOR_TOKEN hoặc DISCORD_TOKEN)")
-        print("=" * 60 + "\n")
-        sys.exit(1)
+        logger.warning("[Moderator] Chưa cấu hình MODERATOR_TOKEN hoặc DISCORD_TOKEN.")
+        logger.warning("[Moderator] Bot đang chuyển sang chế độ chờ (standby mode)...")
+        import time
+        while True:
+            time.sleep(3600)
 
     try:
         bot.run(DISCORD_TOKEN)

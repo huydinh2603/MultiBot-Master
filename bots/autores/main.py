@@ -160,8 +160,10 @@ async def create_keepalive_web_server(bot_instance: CustomCommandsBot) -> web.Ap
 # ---------------------------------------------------------------------------
 async def main():
     if not BOT_TOKEN:
-        logger.critical("Missing DISCORD_BOT_TOKEN environment variable!")
-        sys.exit(1)
+        logger.warning("[AutoRes] Chưa cấu hình AUTORES_TOKEN hoặc DISCORD_BOT_TOKEN.")
+        logger.warning("[AutoRes] Bot đang chuyển sang chế độ chờ (standby mode)...")
+        while True:
+            await asyncio.sleep(3600)
 
     bot = CustomCommandsBot()
     web_runner: web.AppRunner | None = None

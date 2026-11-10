@@ -62,15 +62,24 @@ Chuyển sang tab **Environment** trên Render và thêm các biến sau:
 
 | Tên Biến | Giá Trị Mẫu / Mô Tả |
 | :--- | :--- |
-| `TOKEN_AUTORES` | Token của Bot AutoRes |
-| `TOKEN_VOICEGUARD` | Token của Bot VoiceGuard |
+| `TOKEN_AUTORES` | Token của Bot AutoRes (từ Discord Developer Portal) |
+| `TOKEN_VOICEGUARD` | Token của Bot VoiceGuard (từ Discord Developer Portal) |
 | `VOICEGUARD_CHANNEL_ID` | *(Tùy chọn)* ID kênh voice muốn bot vào treo 24/7 |
-| `TOKEN_MODERATOR` | Token của Bot Moderator |
-| `TOKEN_SHERIFF` | Token của Bot Sheriff |
+| `TOKEN_MODERATOR` | Token của Bot Moderator (từ Discord Developer Portal) |
+| `TOKEN_SHERIFF` | Token của Bot Sheriff (từ Discord Developer Portal) |
 | `USER_TOKEN` | Token tài khoản cá nhân Discord (User Token) cho Widget |
 | `SYNC_KEY` | `LamiaSync2026` (Khóa bảo mật đồng bộ Widget) |
 
-> 📌 *Lưu ý: Nếu bạn chưa muốn bật bot nào, chỉ cần để trống hoặc không điền token của bot đó. Cụm điều phối sẽ tự động phát hiện và bỏ qua bot chưa có token.*
+> 🔑 **Cách lấy `USER_TOKEN` cho Widget Bot (Rich Presence):**
+> 1. Mở Discord trên trình duyệt web (Chrome/Edge/Brave...) tại `https://discord.com/app`.
+> 2. Bấm phím `F12` (hoặc `Ctrl + Shift + I`) để mở Developer Tools, chọn tab **Network** (Mạng).
+> 3. Trong ô Filter/Tìm kiếm, gõ `science` hoặc `library` hoặc `@me`.
+> 4. Nhấp vào bất kỳ request nào xuất hiện trong danh sách, cuộn xuống mục **Request Headers**.
+> 5. Tìm dòng `authorization:` và copy chuỗi ký tự phía sau đó (đây chính là **User Token** của bạn).
+> 6. Dán vào biến `USER_TOKEN` trên Render.
+> *(Lưu ý: Không dùng Bot Token của Discord Developer Portal cho `USER_TOKEN` vì Widget là Selfbot mô phỏng trạng thái cá nhân).*
+
+> 📌 *Lưu ý: Nếu bạn chưa muốn bật bot nào, chỉ cần để trống hoặc không điền token của bot đó. Cụm điều phối sẽ tự động đưa bot đó vào chế độ chờ (standby mode) an toàn mà không gây crash hay tốn tài nguyên.*
 
 ### Bước 4: Nhấn Create Web Service & Hoàn Tất!
 Render sẽ tự động build image Docker và khởi chạy cả 5 bot trong vòng 2-3 phút!

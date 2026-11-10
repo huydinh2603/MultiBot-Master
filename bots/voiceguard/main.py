@@ -245,8 +245,11 @@ async def status_command(interaction: discord.Interaction):
 def main():
     global bot
     if not TOKEN:
-        print("[LOI] Chua co VOICEGUARD_TOKEN hoac DISCORD_TOKEN trong bien moi truong!")
-        return
+        logging.warning("[VoiceGuard] Chưa cấu hình VOICEGUARD_TOKEN hoặc DISCORD_TOKEN.")
+        logging.warning("[VoiceGuard] Bot đang chuyển sang chế độ chờ (standby mode)...")
+        import time
+        while True:
+            time.sleep(3600)
 
     # Khoi dong Web Server mini de Render / Koyeb / UptimeRobot giu ket noi
     start_keep_alive()

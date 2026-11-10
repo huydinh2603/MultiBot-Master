@@ -26,16 +26,18 @@ let activeClient = null;
 // Xử lý và làm sạch Token tránh lỗi người dùng copy dính khoảng trắng hoặc dấu ngoặc kép
 let token = process.env.SHERIFF_TOKEN || process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('[Lỗi Nghiêm Trọng] Chưa tìm thấy DISCORD_TOKEN trong biến môi trường của Render!');
-  currentBotStatus = 'MISSING_DISCORD_TOKEN';
+  console.log('[Sheriff] Chưa cấu hình SHERIFF_TOKEN hoặc DISCORD_TOKEN trong biến môi trường.');
+  console.log('[Sheriff] Bot đang ở chế độ chờ (standby mode)...');
+  currentBotStatus = 'WAITING_FOR_TOKEN';
 } else {
-  token = token.trim();
-  if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'"))) {
-    token = token.slice(1, -1).trim();
-  }
+  token = token.trim().replace(/^["'`]|["'`]$/g, '');
   if (token.startsWith('DISCORD_TOKEN=')) {
     token = token.replace('DISCORD_TOKEN=', '').trim();
   }
+  if (token.startsWith('Bot ')) {
+    token = token.replace(/^Bot\s+/i, '').trim();
+  }
+  token = token.replace(/^["'`]|["'`]$/g, '').trim();
 }
 
 // 1. Khởi động Web Server nếu không chạy dưới Orchestrator

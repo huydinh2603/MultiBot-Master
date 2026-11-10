@@ -216,10 +216,27 @@ function applyRPC(client) {
   }
 }
 
+function sanitizeToken(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let token = raw.trim();
+  token = token.replace(/^["'`]|["'`]$/g, '').trim();
+  if (/^authorization:\s*/i.test(token)) {
+    token = token.replace(/^authorization:\s*/i, '').trim();
+  }
+  if (/^bearer\s+/i.test(token)) {
+    token = token.replace(/^bearer\s+/i, '').trim();
+  }
+  if (/^bot\s+/i.test(token)) {
+    token = token.replace(/^bot\s+/i, '').trim();
+  }
+  token = token.replace(/^["'`]|["'`]$/g, '').trim();
+  return token;
+}
+
 async function connectWithToken(token) {
-  const cleanToken = (token || '').trim().replace(/^["']|["']$/g, '');
+  const cleanToken = sanitizeToken(token);
   if (!cleanToken) {
-    throw new Error('Token rỗng');
+    throw new Error('Token rỗng hoặc không hợp lệ');
   }
 
   if (currentClient) {
@@ -237,7 +254,6 @@ async function connectWithToken(token) {
 
   const client = new Client({
     checkUpdate: false,
-    intents: ['GUILDS'],
     makeCache: Options.cacheWithLimits({
       ApplicationCommandManager: 0,
       BaseGuildEmojiManager: 0,
@@ -277,6 +293,25 @@ async function connectWithToken(token) {
     addLog(`[Discord Client Error]: ${err.message}`);
   });
 
+  client.on('shardError', (err) => {
+    botStatus.lastError = err.message;
+    addLog(`[Shard Error]: ${err.message}`);
+  });
+
+  client.on('shardDisconnect', (event) => {
+    botStatus.isLoggedIn = false;
+    addLog(`[Shard Disconnect] Code: ${event.code}, Reason: ${event.reason || 'None'}`);
+    if (event.code === 4013) {
+      const warningMsg = 'LỖI 4013 (Invalid intent): Token hiện tại là BOT TOKEN (từ Discord Developer Portal), không phải USER TOKEN! Widget Rich Presence yêu cầu Discord USER TOKEN (tài khoản cá nhân) để hiển thị trạng thái trên profile của bạn.';
+      botStatus.lastError = warningMsg;
+      addLog(`[CẢNH BÁO QUAN TRỌNG] ${warningMsg}`);
+    } else if (event.code === 4004) {
+      const authMsg = 'LỖI 4004 (Authentication failed): Token không chính xác hoặc đã hết hạn/đổi mật khẩu. Vui lòng lấy lại USER_TOKEN mới từ F12 DevTools.';
+      botStatus.lastError = authMsg;
+      addLog(`[CẢNH BÁO] ${authMsg}`);
+    }
+  });
+
   client.on('ready', () => {
     botStatus.isLoggedIn = true;
     botStatus.userTag = client.user.tag;
@@ -304,12 +339,16 @@ async function connectWithToken(token) {
     addLog('[Discord] Token hợp lệ, đang đồng bộ dữ liệu...');
     return client;
   } catch (loginErr) {
-    botStatus.lastError = loginErr.message;
+    let errMsg = loginErr.message;
+    if (errMsg && (errMsg.includes('TOKEN_INVALID') || errMsg.includes('An invalid token'))) {
+      errMsg = 'Token không hợp lệ. Vui lòng kiểm tra lại USER_TOKEN từ F12 DevTools.';
+    }
+    botStatus.lastError = errMsg;
     if (currentClient === client) {
       safelyDestroyClient(client);
       currentClient = null;
     }
-    throw loginErr;
+    throw new Error(errMsg);
   }
 }
 
@@ -1226,12 +1265,13 @@ app.listen(PORT, BIND_HOST, async () => {
   // Nạp cấu hình bài hát lưu trên Cloud trước khi kết nối Discord
   await syncConfigFromCloud();
 
-  const startupToken = process.env.USER_TOKEN || process.env.TOKEN_USER || process.env.WIDGET_TOKEN || process.env.TOKEN_WIDGET || loadWorkingToken() || process.env.DISCORD_TOKEN;
+  const rawToken = process.env.USER_TOKEN || process.env.TOKEN_USER || process.env.TOKEN_WIDGET || process.env.WIDGET_TOKEN || loadWorkingToken();
+  const startupToken = sanitizeToken(rawToken);
   if (startupToken) {
     connectWithToken(startupToken).catch((err) => {
-      addLog(`[Khởi động] Token không hợp lệ (${err.message}). Vui lòng cập nhật Token mới.`);
+      addLog(`[Khởi động] Không thể kết nối với Token: ${err.message}.`);
     });
   } else {
-    addLog('[Thông báo] Đang chờ Token...');
+    addLog('[Thông báo] Đang chờ cấu hình USER_TOKEN trong Render Environment hoặc qua Tampermonkey...');
   }
 });

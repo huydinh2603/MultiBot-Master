@@ -237,6 +237,7 @@ async function connectWithToken(token) {
 
   const client = new Client({
     checkUpdate: false,
+    intents: ['GUILDS'],
     makeCache: Options.cacheWithLimits({
       ApplicationCommandManager: 0,
       BaseGuildEmojiManager: 0,
@@ -1216,8 +1217,10 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
-app.listen(PORT, async () => {
-  addLog(`[Web Server] Đang lắng nghe trên cổng ${PORT}`);
+const BIND_HOST = process.env.ORCHESTRATOR ? '127.0.0.1' : '0.0.0.0';
+
+app.listen(PORT, BIND_HOST, async () => {
+  addLog(`[Web Server] Đang lắng nghe trên ${BIND_HOST}:${PORT}`);
   addLog(`[Bảo mật] SYNC_KEY hiện tại là: ${SYNC_KEY}`);
 
   // Nạp cấu hình bài hát lưu trên Cloud trước khi kết nối Discord

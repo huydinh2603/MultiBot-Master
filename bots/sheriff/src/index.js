@@ -97,9 +97,13 @@ const server = http.createServer(async (req, res) => {
   res.end(`Sheriff Bot Web Server is running! Status: ${currentBotStatus}. (Visit /status or /test-discord)`);
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Web Server] Đang lắng nghe tại cổng: ${PORT}`);
-});
+if (!isOrchestrator) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Web Server] Đang lắng nghe tại cổng: ${PORT}`);
+  });
+} else {
+  console.log('[Web Server] Standalone web server disabled (managed by Multi-Bot Orchestrator).');
+}
 
 // Dọn dẹp RAM định kỳ ngăn ngừa tràn 512MB RAM của Render (ngăn lỗi exit code 134)
 setInterval(() => {

@@ -1,6 +1,7 @@
 import os
 import sys
 import gc
+import re
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
@@ -63,11 +64,13 @@ YTDL_OPTIONS = {
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
-    'default_search': 'auto',
+    'default_search': 'ytsearch1',
     'source_address': '0.0.0.0',
+    'js_runtimes': {'node': {}},
+    'remote_components': {'ejs:github'},
     'extractor_args': {
         'youtube': {
-            'player-client': ['web_embedded', 'web', 'tv', 'android']
+            'player_client': ['android', 'web_embedded', 'tv']
         }
     }
 }
@@ -106,9 +109,25 @@ current_song: Optional[SongItem] = None
 current_volume: float = 0.85
 
 
+def sanitize_song_query(query: str) -> str:
+    """Làm sạch liên kết bài hát, loại bỏ tham số playlist/mix của YouTube để trích xuất chính xác."""
+    clean = query.strip()
+    # Nếu là liên kết xem video YouTube có chứa video ID (v=...)
+    if "youtube.com/watch" in clean or "youtu.be/" in clean or "music.youtube.com/watch" in clean:
+        yt_match = re.search(r'(?:youtube\.com/watch\?.*v=|youtu\.be/|music\.youtube\.com/watch\?.*v=)([a-zA-Z0-9_-]{11})', clean)
+        if yt_match:
+            return f"https://www.youtube.com/watch?v={yt_match.group(1)}"
+
+    # Nếu không phải URL (người dùng gõ tên bài hát), tự động chuyển thành từ khóa tìm kiếm
+    if not clean.startswith(('http://', 'https://')):
+        return f"ytsearch1:{clean}"
+
+    return clean
+
+
 def extract_song_info(query: str, requester: str = "Người dùng") -> Optional[SongItem]:
     """Trích xuất link stream và thông tin bài hát bằng yt-dlp trong luồng riêng."""
-    clean_q = query.strip()
+    clean_q = sanitize_song_query(query)
     lower_q = clean_q.lower()
 
     # Hỗ trợ link trực tiếp file âm thanh (MP3, M4A, AAC, FLAC, OGG, WAV) hoặc đài radio stream
@@ -129,20 +148,33 @@ def extract_song_info(query: str, requester: str = "Người dùng") -> Optional
             return None
 
         if 'entries' in info:
-            if len(info['entries']) == 0:
+            entries = list(info['entries']) if info['entries'] else []
+            if len(entries) == 0:
                 return None
-            info = info['entries'][0]
+            info = entries[0]
+
+        # Tìm link stream trực tiếp từ info hoặc duyệt danh sách formats
+        stream_url = info.get('url')
+        if not stream_url and 'formats' in info:
+            audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none' and f.get('url')]
+            if audio_formats:
+                audio_formats.sort(key=lambda f: f.get('abr') or f.get('tbr') or 0, reverse=True)
+                stream_url = audio_formats[0].get('url')
+
+        if not stream_url:
+            logging.error(f"[YTDL] Không tìm thấy direct audio stream URL cho: {clean_q}")
+            return None
 
         return SongItem(
             title=info.get('title', 'Bài hát không tên'),
             web_url=info.get('webpage_url') or clean_q,
-            stream_url=info.get('url'),
+            stream_url=stream_url,
             duration=info.get('duration', 0),
             thumbnail=info.get('thumbnail') or "https://cdn-icons-png.flaticon.com/512/3844/3844724.png",
             requester=requester
         )
     except Exception as e:
-        logging.error(f"[YTDL] Lỗi trích xuất '{query}': {e}")
+        logging.error(f"[YTDL] Lỗi trích xuất '{query}' (đã làm sạch thành '{clean_q}'): {e}", exc_info=True)
         return None
 
 

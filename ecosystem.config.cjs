@@ -116,6 +116,7 @@ module.exports = {
         ORCHESTRATOR: 'true',
         WIDGET_PORT: '3005',
         USER_TOKEN: process.env.USER_TOKEN || process.env.TOKEN_USER || process.env.TOKEN_WIDGET || process.env.WIDGET_TOKEN,
+        DISCORD_PROXY: process.env.DISCORD_PROXY || process.env.PROXY_URL || process.env.USER_PROXY,
       },
       restart_delay: 5000,
       max_restarts: 10,

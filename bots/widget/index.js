@@ -7,6 +7,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.WIDGET_PORT || (process.env.ORCHESTRATOR ? 3005 : (process.env.PORT || 3000));
 const SYNC_KEY = process.env.SYNC_KEY || 'LamiaSync2026';
+const PROXY_URL = (process.env.DISCORD_PROXY || process.env.PROXY_URL || process.env.USER_PROXY || '').trim();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -96,6 +97,8 @@ const botStatus = {
   tokenPrefix: null,
   isLoggedIn: false,
   userTag: null,
+  proxyConfigured: Boolean(PROXY_URL),
+  proxyTarget: PROXY_URL ? PROXY_URL.replace(/:[^:@]+@/, ':****@') : null,
   lastError: null,
   debugMessages: []
 };
@@ -252,7 +255,7 @@ async function connectWithToken(token) {
   botStatus.tokenPrefix = cleanToken.substring(0, 10) + '...';
   botStatus.lastError = null;
 
-  const client = new Client({
+  const clientOptions = {
     checkUpdate: false,
     makeCache: Options.cacheWithLimits({
       ApplicationCommandManager: 0,
@@ -272,7 +275,53 @@ async function connectWithToken(token) {
       UserManager: 0,
       VoiceStateManager: 0
     })
-  });
+  };
+
+  // Cấu hình Residential Proxy & Giả lập thông số Desktop Client Windows nếu có PROXY_URL
+  if (PROXY_URL) {
+    try {
+      const { ProxyAgent } = require('proxy-agent');
+      const agent = new ProxyAgent(PROXY_URL);
+      clientOptions.ws = {
+        agent: agent,
+        properties: {
+          $os: 'Windows',
+          $browser: 'Discord Client',
+          $device: '',
+          $browser_user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+          $browser_version: '128.0.0.0',
+          $os_version: '10',
+          $referrer: '',
+          $referring_domain: '',
+          $referrer_current: '',
+          $referring_domain_current: '',
+          $release_channel: 'stable',
+          $client_build_number: 330100,
+          $client_event_source: null
+        }
+      };
+      clientOptions.http = {
+        agent: agent
+      };
+      clientOptions.rest = {
+        agent: agent
+      };
+      addLog(`[Proxy] Đã kích hoạt Residential Proxy cho kết nối Discord: ${botStatus.proxyTarget}`);
+    } catch (proxyErr) {
+      addLog(`[Proxy Cảnh báo] Không thể kích hoạt ProxyAgent: ${proxyErr.message}`);
+    }
+  } else {
+    // Luôn giả lập Client properties chuẩn Windows để né bộ lọc packet thô của Discord
+    clientOptions.ws = {
+      properties: {
+        $os: 'Windows',
+        $browser: 'Discord Client',
+        $device: '',
+      }
+    };
+  }
+
+  const client = new Client(clientOptions);
   currentClient = client;
 
   client.ws.connect = async function() {

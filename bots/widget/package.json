@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "discord.js-selfbot-v13": "^3.4.1",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "proxy-agent": "^6.4.0"
   }
 }

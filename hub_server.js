@@ -61,7 +61,7 @@ function getBotStatuses() {
     voiceguard: {
       name: 'VoiceGuard',
       type: 'Python 3.12 (discord.py[voice])',
-      description: '24/7 Voice Channel Keeper & Watchdog',
+      description: '24/7 Voice Keeper & Music Player (/play)',
       configured: hasToken('TOKEN_VOICEGUARD') || hasToken('VOICEGUARD_TOKEN') || hasToken('DISCORD_TOKEN'),
     },
     moderator: {

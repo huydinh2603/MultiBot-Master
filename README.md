@@ -14,7 +14,7 @@ Chạy đồng thời **5 Discord Bots** trong **1 duy nhất Web Service contai
 | Bot | Ngôn Ngữ / Thư Viện | Chức Năng Chính | RAM Ước Tính |
 | :--- | :--- | :--- | :--- |
 | **AutoRes** | Python 3.12 (`discord.py`) | Trả lời tự động thông minh & quản lý lệnh tùy chỉnh | ~38 MB |
-| **VoiceGuard** | Python 3.12 (`discord.py[voice]`) | Treo phòng voice 24/7, tự kết nối lại khi rớt mạng | ~35 MB |
+| **VoiceGuard** | Python 3.12 (`discord.py[voice]`) | Treo phòng voice 24/7 & Trình phát nhạc (/play, /skip, /queue) | ~40 MB |
 | **Moderator** | Python 3.12 (`discord.py`) | Hệ thống Quản trị Server, AutoMod, Ticket, Cổng xác minh | ~45 MB |
 | **Sheriff** | Node.js 20 (`discord.js v14`) | Mini-game bắn súng câm lặng (Mute) & Kinh tế T-Coin | ~40 MB |
 | **Widget** | Node.js 20 (`discord.js-selfbot`) | Rich Presence hiển thị trạng thái/bài hát 24/7 & Web UI | ~40 MB |

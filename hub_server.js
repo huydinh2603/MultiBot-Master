@@ -6,6 +6,7 @@ const os = require('node:os');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const WIDGET_PORT = parseInt(process.env.WIDGET_PORT || '3005', 10);
+const WIDGET_URL = process.env.WIDGET_URL || 'http://192.168.1.129:3000/';
 const startTime = Date.now();
 
 // Proxy helper for Widget HTTP requests
@@ -79,8 +80,9 @@ function getBotStatuses() {
     widget: {
       name: 'Widget',
       type: 'Node.js 20 (discord.js-selfbot-v13)',
-      description: 'Custom Rich Presence 24/7 (Yêu cầu Discord User Token)',
-      configured: hasToken('USER_TOKEN') || hasToken('TOKEN_USER') || hasToken('TOKEN_WIDGET') || hasToken('WIDGET_TOKEN'),
+      description: 'Custom Rich Presence 24/7 (Đang chạy an toàn tại nhà: 192.168.1.129:3000)',
+      configured: true,
+      url: WIDGET_URL,
     },
   };
 }
@@ -127,10 +129,10 @@ const server = http.createServer((req, res) => {
     return proxyToWidget(req, res);
   }
 
-  // 4. Proxy /widget to Widget's Express Web UI
+  // 4. Proxy /widget to Widget's Express Web UI or Redirect to Home Device
   if (pathname === '/widget' || pathname.startsWith('/widget/')) {
-    const target = pathname === '/widget' ? '/' : pathname.replace(/^\/widget/, '') || '/';
-    return proxyToWidget(req, res, target + (parsedUrl.search || ''));
+    res.writeHead(302, { Location: WIDGET_URL });
+    return res.end();
   }
 
   // 5. Root Dashboard (Dark Modern UI)
@@ -362,7 +364,7 @@ const server = http.createServer((req, res) => {
             <div class="bot-desc">${b.description}</div>
           </div>
           <div class="bot-actions">
-            ${isWidget ? '<a href="/widget" class="btn">Mở Giao Diện Widget</a>' : ''}
+            ${isWidget ? `<a href="${WIDGET_URL}" target="_blank" rel="noopener noreferrer" class="btn">Mở Giao Diện Widget</a>` : ''}
             <a href="/status" class="btn btn-secondary">Xem JSON Status</a>
           </div>
         </div>`;

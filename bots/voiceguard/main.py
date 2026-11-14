@@ -126,11 +126,11 @@ def sanitize_song_query(query: str) -> str:
 
 
 def extract_song_info(query: str, requester: str = "Người dùng") -> Optional[SongItem]:
-    """Trích xuất link stream và thông tin bài hát bằng yt-dlp trong luồng riêng."""
+    """Trích xuất link stream bằng cơ chế 3 lớp (Android Client -> Default YTDL -> SoundCloud Fallback)."""
     clean_q = sanitize_song_query(query)
     lower_q = clean_q.lower()
 
-    # Hỗ trợ link trực tiếp file âm thanh (MP3, M4A, AAC, FLAC, OGG, WAV) hoặc đài radio stream
+    # 1. Hỗ trợ link trực tiếp file âm thanh (MP3, M4A, AAC, FLAC, OGG, WAV) hoặc đài radio stream
     if any(lower_q.endswith(ext) or ext + '?' in lower_q for ext in ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav']):
         raw_name = clean_q.split('/')[-1].split('?')[0] or "Direct Audio Stream"
         return SongItem(
@@ -142,40 +142,131 @@ def extract_song_info(query: str, requester: str = "Người dùng") -> Optional
             requester=requester
         )
 
+    # 2. Lớp 1: Thử trích xuất với YouTube Android Client (không yêu cầu đăng nhập, né lỗi Please sign in)
     try:
-        info = ytdl.extract_info(clean_q, download=False)
-        if not info:
-            return None
+        ydl_opts_android = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'source_address': '0.0.0.0',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android']
+                }
+            }
+        }
+        with yt_dlp.YoutubeDL(ydl_opts_android) as ydl:
+            info = ydl.extract_info(clean_q, download=False)
+            if info:
+                if 'entries' in info:
+                    entries = list(info['entries']) if info['entries'] else []
+                    info = entries[0] if entries else None
 
-        if 'entries' in info:
-            entries = list(info['entries']) if info['entries'] else []
-            if len(entries) == 0:
-                return None
-            info = entries[0]
+                if info:
+                    stream_url = info.get('url')
+                    if not stream_url and 'formats' in info:
+                        audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none' and f.get('url')]
+                        if audio_formats:
+                            audio_formats.sort(key=lambda f: f.get('abr') or f.get('tbr') or 0, reverse=True)
+                            stream_url = audio_formats[0].get('url')
 
-        # Tìm link stream trực tiếp từ info hoặc duyệt danh sách formats
-        stream_url = info.get('url')
-        if not stream_url and 'formats' in info:
-            audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none' and f.get('url')]
-            if audio_formats:
-                audio_formats.sort(key=lambda f: f.get('abr') or f.get('tbr') or 0, reverse=True)
-                stream_url = audio_formats[0].get('url')
-
-        if not stream_url:
-            logging.error(f"[YTDL] Không tìm thấy direct audio stream URL cho: {clean_q}")
-            return None
-
-        return SongItem(
-            title=info.get('title', 'Bài hát không tên'),
-            web_url=info.get('webpage_url') or clean_q,
-            stream_url=stream_url,
-            duration=info.get('duration', 0),
-            thumbnail=info.get('thumbnail') or "https://cdn-icons-png.flaticon.com/512/3844/3844724.png",
-            requester=requester
-        )
+                    if stream_url:
+                        return SongItem(
+                            title=info.get('title', 'Bài hát không tên'),
+                            web_url=info.get('webpage_url') or clean_q,
+                            stream_url=stream_url,
+                            duration=info.get('duration', 0),
+                            thumbnail=info.get('thumbnail') or "https://cdn-icons-png.flaticon.com/512/3844/3844724.png",
+                            requester=requester
+                        )
     except Exception as e:
-        logging.error(f"[YTDL] Lỗi trích xuất '{query}' (đã làm sạch thành '{clean_q}'): {e}", exc_info=True)
-        return None
+        logging.warning(f"[YTDL Android Client] Thử nghiệm không thành công cho '{clean_q}': {e}. Đang chuyển sang cơ chế dự phòng...")
+
+    # 3. Lớp 2: Thử trích xuất với cấu hình mặc định của yt-dlp
+    try:
+        ydl_opts_default = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'source_address': '0.0.0.0',
+        }
+        with yt_dlp.YoutubeDL(ydl_opts_default) as ydl:
+            info = ydl.extract_info(clean_q, download=False)
+            if info:
+                if 'entries' in info:
+                    entries = list(info['entries']) if info['entries'] else []
+                    info = entries[0] if entries else None
+
+                if info:
+                    stream_url = info.get('url')
+                    if not stream_url and 'formats' in info:
+                        audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none' and f.get('url')]
+                        if audio_formats:
+                            audio_formats.sort(key=lambda f: f.get('abr') or f.get('tbr') or 0, reverse=True)
+                            stream_url = audio_formats[0].get('url')
+
+                    if stream_url:
+                        return SongItem(
+                            title=info.get('title', 'Bài hát không tên'),
+                            web_url=info.get('webpage_url') or clean_q,
+                            stream_url=stream_url,
+                            duration=info.get('duration', 0),
+                            thumbnail=info.get('thumbnail') or "https://cdn-icons-png.flaticon.com/512/3844/3844724.png",
+                            requester=requester
+                        )
+    except Exception as e:
+        logging.warning(f"[YTDL Default Client] Không thành công cho '{clean_q}': {e}. Kích hoạt SoundCloud Fallback...")
+
+    # 4. Lớp 3: Cơ chế SoundCloud Fallback cực mạnh (SoundCloud không bao giờ chặn Datacenter IP)
+    search_query = query.strip()
+    if "youtube.com" in search_query or "youtu.be" in search_query:
+        try:
+            import urllib.request, json
+            oembed_url = f"https://www.youtube.com/oembed?url={search_query}&format=json"
+            req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get('title'):
+                    raw_title = data['title']
+                    # Loại bỏ hashtag để tìm kiếm chính xác nhất trên SoundCloud
+                    search_query = re.sub(r'#\S+', '', raw_title).strip()
+                    logging.info(f"[oEmbed Metadata] Đã trích xuất tên bài hát: '{search_query}'")
+        except Exception as oerr:
+            logging.debug(f"[oEmbed Error]: {oerr}")
+
+    try:
+        ydl_opts_sc = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'source_address': '0.0.0.0',
+            'default_search': 'scsearch1',
+        }
+        with yt_dlp.YoutubeDL(ydl_opts_sc) as ydl:
+            sc_target = search_query if search_query.startswith(('http://', 'https://')) else f"scsearch1:{search_query}"
+            info = ydl.extract_info(sc_target, download=False)
+            if info:
+                if 'entries' in info:
+                    entries = list(info['entries']) if info['entries'] else []
+                    info = entries[0] if entries else None
+
+                if info and info.get('url'):
+                    logging.info(f"[SoundCloud Fallback] Đã tìm thấy trên SoundCloud: '{info.get('title')}'")
+                    return SongItem(
+                        title=info.get('title', search_query),
+                        web_url=info.get('webpage_url') or query,
+                        stream_url=info.get('url'),
+                        duration=info.get('duration', 0),
+                        thumbnail=info.get('thumbnail') or "https://cdn-icons-png.flaticon.com/512/3844/3844724.png",
+                        requester=requester
+                    )
+    except Exception as e:
+        logging.error(f"[SoundCloud Fallback] Thất bại cho '{search_query}': {e}")
+
+    return None
 
 
 def after_play(error):

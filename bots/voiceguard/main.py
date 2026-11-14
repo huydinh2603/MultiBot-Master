@@ -45,54 +45,98 @@ bot = commands.Bot(
 
 # Bien luu ID channel can giu 24/7
 target_channel_id = int(VOICE_CHANNEL_ID) if VOICE_CHANNEL_ID and str(VOICE_CHANNEL_ID).isdigit() else None
+connect_lock = asyncio.Lock()
+is_first_ready = True
+OPUS_SILENCE_FRAME = b'\xF8\xFF\xFE'
 
 
 def is_bot_in_target_channel(guild: discord.Guild, target_id: int) -> bool:
-    """Kiem tra xem bot co thuc su dang o trong phong voice muc tieu hay khong dua theo VoiceState cua Discord."""
-    if not guild or not guild.me or not guild.me.voice:
+    """Kiem tra xem bot co thuc su dang o trong phong voice muc tieu hay khong."""
+    if not guild or not target_id:
         return False
-    return guild.me.voice.channel is not None and guild.me.voice.channel.id == target_id
+
+    # 1. Kiem tra voice_client dang hoat dong
+    vc = guild.voice_client
+    if vc and vc.is_connected() and vc.channel and vc.channel.id == target_id:
+        return True
+
+    # 2. Kiem tra VoiceState tren may chu Discord
+    if guild.me and guild.me.voice and guild.me.voice.channel:
+        if guild.me.voice.channel.id == target_id:
+            return True
+
+    return False
 
 
 async def connect_to_voice(channel: discord.VoiceChannel):
-    """Ket noi hoac di chuyen bot den Voice Channel muc tieu."""
-    guild = channel.guild
+    """Ket noi hoac di chuyen bot den Voice Channel muc tieu an toan, chong giat/kick."""
+    async with connect_lock:
+        guild = channel.guild
 
-    try:
-        # 1. Neu bot da o dung phong voice muc tieu roi, TUYET DOI KHONG disconnect
-        if is_bot_in_target_channel(guild, channel.id):
-            return
-
-        # 2. Neu bot dang o mot phong voice khac trong server (vi du bi keo sang phong khac hoac AFK)
-        if guild.me.voice and guild.me.voice.channel:
-            if guild.me.voice.channel.id != channel.id:
-                logging.info(f"Bot dang o phong '{guild.me.voice.channel.name}', dang chuyen ve phong '{channel.name}'...")
-                if guild.voice_client:
-                    await guild.voice_client.move_to(channel)
-                else:
-                    await guild.me.move_to(channel)
+        try:
+            # 1. Neu bot DA O DUNG PHONG roi, TUYET DOI KHONG lam gi va KHONG disconnect
+            if is_bot_in_target_channel(guild, channel.id):
                 return
 
-        # 3. Neu bot chua o trong bat ky phong voice nao (guild.me.voice is None)
-        # Neu co voice_client treo cu (zombie) thi don dep
-        if guild.voice_client is not None:
-            try:
-                await guild.voice_client.disconnect(force=True)
-            except Exception:
-                pass
-            await asyncio.sleep(1)
+            vc = guild.voice_client
 
-        logging.info(f"Dang ket noi vao voice room: {channel.name} (ID: {channel.id})...")
-        await channel.connect(reconnect=True, self_deaf=True)
-        logging.info(f"Da ket noi thanh cong vao: {channel.name}")
+            # 2. Neu bot dang o mot phong voice khac trong server (vi du: bi keo hoac chuyen sang AFK)
+            if guild.me and guild.me.voice and guild.me.voice.channel:
+                if guild.me.voice.channel.id != channel.id:
+                    logging.info(f"Bot dang o phong '{guild.me.voice.channel.name}', dang chuyen ve phong '{channel.name}'...")
+                    if vc and vc.is_connected():
+                        await vc.move_to(channel)
+                        return
+                    else:
+                        await guild.me.move_to(channel)
+                        return
 
-    except Exception as e:
-        logging.error(f"Loi khi ket noi vao voice room: {e}")
+            # 3. Neu voice_client dang ket noi vao dung phong nay roi
+            if vc and vc.is_connected():
+                if vc.channel and vc.channel.id == channel.id:
+                    return
+                else:
+                    await vc.move_to(channel)
+                    return
+
+            # 4. Neu co voice_client cu nhung bi mat ket noi (zombie), don dep an toan
+            if vc is not None:
+                try:
+                    await vc.disconnect(force=True)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+
+            # 5. Tien hanh ket noi moi
+            logging.info(f"Dang ket noi vao voice room: {channel.name} (ID: {channel.id})...")
+            await channel.connect(reconnect=True, timeout=30.0, self_deaf=True)
+            logging.info(f"Da ket noi thanh cong vao: {channel.name}")
+
+        except Exception as e:
+            logging.error(f"Loi khi ket noi vao voice room '{channel.name}': {e}")
 
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=15)
+async def voice_keepalive():
+    """Gui frame silence (Opus RFC 6716) dinh ky 15 giay qua UDP.
+    Ngan chan Discord RTC server ngat ket noi do khong co du lieu am thanh (inactivity/idle timeout).
+    Ton 0% CPU va chi ton 3 bytes bang thong moi 15 giay."""
+    for vc in bot.voice_clients:
+        try:
+            if vc and vc.is_connected():
+                vc.send_audio_packet(OPUS_SILENCE_FRAME, encode=False)
+        except Exception as e:
+            logging.debug(f"[KeepAlive] Loi gui packet: {e}")
+
+
+@voice_keepalive.before_loop
+async def before_voice_keepalive():
+    await bot.wait_until_ready()
+
+
+@tasks.loop(seconds=45)
 async def voice_watchdog():
-    """Tac vu kiem tra moi 60 giay: Chi ket noi lai neu bot THUC SU khong o trong phong."""
+    """Tac vu kiem tra moi 45 giay: Chi ket noi lai neu bot THUC SU khong o trong phong."""
     global target_channel_id
 
     # Don dep bo nho dinh ky giup giai phong RAM tren Render Free Tier 512MB
@@ -112,26 +156,37 @@ async def voice_watchdog():
             return
 
     if channel and isinstance(channel, discord.VoiceChannel):
-        guild = channel.guild
-
-        # Neu bot DA O DUNG PHONG, hoan toan khong lam gi ca (giu nguyen)
-        if is_bot_in_target_channel(guild, channel.id):
+        # Neu bot DA O DUNG PHONG, hoan toan giu nguyen ket noi
+        if is_bot_in_target_channel(channel.guild, channel.id):
             return
 
-        logging.warning(f"Watchdog phat hien bot khong o trong phong '{channel.name}'. Tien hanh ket noi...")
+        logging.warning(f"[Watchdog] Phat hien bot khong o trong phong '{channel.name}'. Tien hanh ket noi...")
         await connect_to_voice(channel)
+
+
+@voice_watchdog.before_loop
+async def before_voice_watchdog():
+    await bot.wait_until_ready()
 
 
 @bot.event
 async def on_ready():
+    global is_first_ready, target_channel_id
     logging.info(f"Bot da online voi ten: {bot.user} (ID: {bot.user.id})")
 
-    # Dong bo slash commands
-    try:
-        synced = await bot.tree.sync()
-        logging.info(f"Da dong bo {len(synced)} lenh slash.")
-    except Exception as e:
-        logging.error(f"Khong the dong bo slash command: {e}")
+    # Chi dong bo slash commands 1 lan duy nhat khi vua khoi dong
+    if is_first_ready:
+        try:
+            synced = await bot.tree.sync()
+            logging.info(f"Da dong bo {len(synced)} lenh slash.")
+        except Exception as e:
+            logging.error(f"Khong the dong bo slash command: {e}")
+
+    # Khoi dong cac vong lap giu ket noi neu chua chay
+    if not voice_keepalive.is_running():
+        voice_keepalive.start()
+    if not voice_watchdog.is_running():
+        voice_watchdog.start()
 
     # Tu dong vao phong voice neu da cau hinh VOICE_CHANNEL_ID
     if target_channel_id:
@@ -144,13 +199,14 @@ async def on_ready():
                 channel = None
 
         if channel and isinstance(channel, discord.VoiceChannel):
-            await connect_to_voice(channel)
+            if not is_bot_in_target_channel(channel.guild, channel.id):
+                await connect_to_voice(channel)
+            else:
+                logging.info(f"Bot da o san trong phong voice '{channel.name}', giu nguyen ket noi.")
         else:
             logging.warning(f"ID {target_channel_id} khong phai la Voice Channel hop le!")
 
-    # Khoi dong watchdog
-    if not voice_watchdog.is_running():
-        voice_watchdog.start()
+    is_first_ready = False
 
 
 @bot.event
@@ -158,22 +214,37 @@ async def on_voice_state_update(member, before, after):
     """Xu ly khi co su kien thay doi voice cua chinh bot."""
     global target_channel_id
     if member.id == bot.user.id and target_channel_id:
+        # Neu kenh khong thay doi (vi du: cap nhat mute/deaf), bo qua
+        if before.channel == after.channel:
+            return
+
         logging.info(f"[VoiceState] Bot voice state thay doi: '{before.channel}' -> '{after.channel}'")
 
         # Truong hop 1: Bot bi ngat ket noi (after.channel is None)
         if after.channel is None:
-            logging.warning("Bot bi ngat ket noi khoi voice room. Se kiem tra va ket noi lai sau 5 giay...")
-            await asyncio.sleep(5)
+            logging.warning("Bot bi ngat ket noi khoi voice room. Cho 2 giay kiem tra trang thai...")
+            await asyncio.sleep(2)
             channel = bot.get_channel(target_channel_id)
+            if not channel:
+                try:
+                    channel = await bot.fetch_channel(target_channel_id)
+                except Exception:
+                    channel = None
             if channel and isinstance(channel, discord.VoiceChannel):
                 if not is_bot_in_target_channel(channel.guild, target_channel_id):
+                    logging.info(f"Tien hanh ket noi lai vao '{channel.name}'...")
                     await connect_to_voice(channel)
 
         # Truong hop 2: Bot bi ai do keo hoac he thong chuyen sang phong khac (vi du kenh AFK)
         elif after.channel.id != target_channel_id:
-            logging.warning(f"Bot bi chuyen sang '{after.channel.name}'. Se chuyen lai phong chinh sau 3 giay...")
-            await asyncio.sleep(3)
+            logging.warning(f"Bot bi chuyen sang '{after.channel.name}'. Se chuyen lai phong chinh sau 2 giay...")
+            await asyncio.sleep(2)
             channel = bot.get_channel(target_channel_id)
+            if not channel:
+                try:
+                    channel = await bot.fetch_channel(target_channel_id)
+                except Exception:
+                    channel = None
             if channel and isinstance(channel, discord.VoiceChannel):
                 await connect_to_voice(channel)
 

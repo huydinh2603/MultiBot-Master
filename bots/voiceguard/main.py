@@ -107,6 +107,8 @@ class SongItem:
 music_queue: List[SongItem] = []
 current_song: Optional[SongItem] = None
 current_volume: float = 0.85
+loop_mode: str = "off"  # "off": phát 1 lần | "single": lặp lại 1 bài | "queue": lặp cả hàng đợi
+skip_requested: bool = False
 
 
 def sanitize_song_query(query: str) -> str:
@@ -279,8 +281,8 @@ def after_play(error):
 
 
 async def play_next_song():
-    """Lấy bài tiếp theo trong hàng đợi và phát vào voice channel."""
-    global current_song, music_queue
+    """Lấy bài tiếp theo trong hàng đợi và phát vào voice channel tuân theo chế độ loop_mode."""
+    global current_song, music_queue, loop_mode, skip_requested
 
     # Tìm voice client đang kết nối
     vc = None
@@ -291,17 +293,47 @@ async def play_next_song():
 
     if not vc or not vc.is_connected():
         current_song = None
+        skip_requested = False
         return
 
-    if len(music_queue) > 0:
-        current_song = music_queue.pop(0)
+    is_skip = skip_requested
+    skip_requested = False
+
+    # Xác định bài hát tiếp theo dựa theo loop_mode
+    next_song = None
+
+    if not is_skip and loop_mode == "single" and current_song is not None:
+        # Chế độ lặp 1 bài: tiếp tục phát lại bài hiện tại
+        next_song = current_song
+    else:
+        # Nếu đang ở chế độ lặp cả hàng đợi và có bài vừa kết thúc (kể cả khi skip)
+        if loop_mode == "queue" and current_song is not None:
+            music_queue.append(current_song)
+
+        if len(music_queue) > 0:
+            next_song = music_queue.pop(0)
+
+    if next_song is not None:
+        current_song = next_song
         try:
             source = discord.FFmpegPCMAudio(current_song.stream_url, **FFMPEG_OPTIONS)
             transformed = discord.PCMVolumeTransformer(source, volume=current_volume)
             vc.play(transformed, after=after_play)
-            logging.info(f"[Player] Đang phát: '{current_song.title}'")
+            logging.info(f"[Player] Đang phát: '{current_song.title}' (Chế độ lặp: {loop_mode})")
         except Exception as e:
-            logging.error(f"[Player] Không thể phát '{current_song.title}': {e}")
+            logging.error(f"[Player] Không thể phát '{current_song.title}': {e}. Thử trích xuất lại URL stream...")
+            # Thử làm mới stream URL phòng trường hợp token URL bị hết hạn
+            try:
+                refreshed = extract_song_info(current_song.web_url, current_song.requester)
+                if refreshed and refreshed.stream_url:
+                    current_song = refreshed
+                    source = discord.FFmpegPCMAudio(current_song.stream_url, **FFMPEG_OPTIONS)
+                    transformed = discord.PCMVolumeTransformer(source, volume=current_volume)
+                    vc.play(transformed, after=after_play)
+                    return
+            except Exception as ref_err:
+                logging.error(f"[Player] Làm mới stream URL thất bại: {ref_err}")
+
             current_song = None
             await play_next_song()
     else:
@@ -588,7 +620,7 @@ async def play_command(interaction: discord.Interaction, link: str):
 
 @bot.tree.command(name="skip", description="Bỏ qua bài hát đang phát và chuyển sang bài kế tiếp.")
 async def skip_command(interaction: discord.Interaction):
-    global current_song
+    global current_song, skip_requested
     vc = interaction.guild.voice_client if interaction.guild else None
     if not vc or not vc.is_connected():
         return await interaction.response.send_message("❌ Bot hiện không ở trong phòng voice!", ephemeral=True)
@@ -597,19 +629,21 @@ async def skip_command(interaction: discord.Interaction):
         return await interaction.response.send_message("❌ Hiện tại không có bài hát nào đang phát để bỏ qua!", ephemeral=True)
 
     skipped = current_song.title if current_song else "Bài hát hiện tại"
+    skip_requested = True
     vc.stop()
     await interaction.response.send_message(f"⏭️ Đã bỏ qua: **{skipped}**")
 
 
 @bot.tree.command(name="stop", description="Dừng phát nhạc và xóa toàn bộ bài hát trong hàng đợi.")
 async def stop_command(interaction: discord.Interaction):
-    global music_queue, current_song
+    global music_queue, current_song, skip_requested
     vc = interaction.guild.voice_client if interaction.guild else None
     if not vc or not vc.is_connected():
         return await interaction.response.send_message("❌ Bot hiện không ở trong phòng voice!", ephemeral=True)
 
     music_queue.clear()
     current_song = None
+    skip_requested = True
     if vc.is_playing() or vc.is_paused():
         vc.stop()
     await interaction.response.send_message("⏹️ Đã dừng phát nhạc và xóa toàn bộ danh sách chờ.")
@@ -631,6 +665,24 @@ async def resume_command(interaction: discord.Interaction):
         return await interaction.response.send_message("❌ Bài hát không ở trạng thái tạm dừng!", ephemeral=True)
     vc.resume()
     await interaction.response.send_message("▶️ Đã tiếp tục phát nhạc.")
+
+
+@bot.tree.command(name="loop", description="Cài đặt chế độ lặp lại bài hát hoặc toàn bộ hàng đợi.")
+@discord.app_commands.describe(mode="Chọn chế độ lặp lại mong muốn")
+@discord.app_commands.choices(mode=[
+    discord.app_commands.Choice(name="➡️ Tắt lặp lại (Phát 1 lần duy nhất)", value="off"),
+    discord.app_commands.Choice(name="🔂 Lặp 1 bài (Phát lại bài hiện tại liên tục)", value="single"),
+    discord.app_commands.Choice(name="🔁 Lặp cả hàng đợi (Hết danh sách tự động lặp lại)", value="queue"),
+])
+async def loop_command(interaction: discord.Interaction, mode: discord.app_commands.Choice[str]):
+    global loop_mode
+    loop_mode = mode.value
+    mode_descriptions = {
+        "off": "➡️ **Tắt lặp lại** — Bài hát phát 1 lần rồi kết thúc (hoặc giữ phòng im lặng khi hết nhạc).",
+        "single": "🔂 **Lặp lại 1 bài** — Bài hát hiện tại sẽ được phát đi phát lại liên tục không ngừng.",
+        "queue": "🔁 **Lặp cả hàng đợi** — Toàn bộ danh sách bài hát sẽ được phát tuần tự và tự động lặp lại vô tận."
+    }
+    await interaction.response.send_message(f"✅ Đã chuyển chế độ phát thành:\n{mode_descriptions.get(loop_mode, loop_mode)}")
 
 
 @bot.tree.command(name="queue", description="Xem danh sách các bài hát đang chờ phát.")
@@ -656,6 +708,13 @@ async def queue_command(interaction: discord.Interaction):
     else:
         embed.add_field(name="⏳ Hàng đợi:", value="*Hàng đợi đang trống. Dùng `/play <link>` để thêm bài hát!*", inline=False)
 
+    mode_display = {
+        "off": "➡️ Phát 1 lần",
+        "single": "🔂 Lặp 1 bài",
+        "queue": "🔁 Lặp cả hàng đợi"
+    }.get(loop_mode, "Tắt")
+    embed.set_footer(text=f"Chế độ lặp: {mode_display} • Dùng /loop để chuyển đổi")
+
     await interaction.response.send_message(embed=embed)
 
 
@@ -664,6 +723,12 @@ async def np_command(interaction: discord.Interaction):
     if not current_song:
         return await interaction.response.send_message("❌ Hiện tại không có bài hát nào đang phát!", ephemeral=True)
 
+    mode_display = {
+        "off": "➡️ Phát 1 lần (Tắt lặp)",
+        "single": "🔂 Đang lặp lại bài này",
+        "queue": "🔁 Đang lặp theo danh sách chờ"
+    }.get(loop_mode, "Phát 1 lần")
+
     embed = discord.Embed(
         title="🎵 Đang Phát Hiện Tại",
         description=f"**[{current_song.title}]({current_song.web_url})**",
@@ -671,6 +736,7 @@ async def np_command(interaction: discord.Interaction):
     )
     embed.add_field(name="Thời lượng", value=f"`{current_song.format_duration()}`", inline=True)
     embed.add_field(name="Yêu cầu bởi", value=f"`{current_song.requester}`", inline=True)
+    embed.add_field(name="Chế độ phát", value=f"`{mode_display}`", inline=True)
     if current_song.thumbnail:
         embed.set_thumbnail(url=current_song.thumbnail)
     await interaction.response.send_message(embed=embed)
@@ -717,12 +783,13 @@ async def join_command(interaction: discord.Interaction, channel: discord.VoiceC
 
 @bot.tree.command(name="leave", description="Yeu cau bot roi khoi Voice Room va tam dung giu phong.")
 async def leave_command(interaction: discord.Interaction):
-    global target_channel_id, music_queue, current_song
+    global target_channel_id, music_queue, current_song, skip_requested
     guild = interaction.guild
     voice_client = guild.voice_client
 
     music_queue.clear()
     current_song = None
+    skip_requested = True
     target_channel_id = None  # Huy muc tieu giu phong de watchdog khong vao lai
     if voice_client:
         await voice_client.disconnect(force=True)
@@ -743,6 +810,12 @@ async def status_command(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
     is_in_room = bot_voice and bot_voice.channel and bot_voice.channel.id == target_channel_id
 
+    mode_display = {
+        "off": "Phát 1 lần (Tắt lặp)",
+        "single": "🔂 Lặp 1 bài",
+        "queue": "🔁 Lặp cả hàng đợi"
+    }.get(loop_mode, "Tắt")
+
     embed = discord.Embed(
         title="🤖 Trang Thai VoiceGuard 24/7 & Music Player",
         color=discord.Color.green() if is_in_room else discord.Color.red()
@@ -758,6 +831,11 @@ async def status_command(interaction: discord.Interaction):
     embed.add_field(
         name="So bai trong hang doi",
         value=f"`{len(music_queue)} bài`",
+        inline=True
+    )
+    embed.add_field(
+        name="Chế độ lặp",
+        value=f"`{mode_display}`",
         inline=True
     )
     embed.set_footer(text="Hoạt động ổn định 24/7 • Hỗ trợ /play YouTube, SoundCloud, MP3")
